@@ -1,7 +1,6 @@
-/// AGN settings screen — simplified.
+/// AGN settings screen — simplified with error handling.
 import 'package:flutter/material.dart';
 import '../services/agn_api.dart';
-import '../models/agn_models.dart';
 
 class SettingsScreen extends StatefulWidget {
   final AgnApi api;
@@ -13,6 +12,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? _config;
+  String? _error;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -21,20 +22,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final cfg = await widget.api.getConfig();
-      setState(() => _config = cfg);
+      if (mounted) setState(() {
+        _config = cfg;
+        _loading = false;
+      });
     } catch (e) {
-      debugPrint('Settings load: $e');
+      if (mounted) setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('设置')),
-      body: _config == null
-          ? Center(child: CircularProgressIndicator())
+      appBar: AppBar(title: const Text('设置')),
+      body: _loading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.cloud_off, size: 48),
+                  const SizedBox(height: 16),
+                  Text('加载失败', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Text(_error!, style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+                  const SizedBox(height: 16),
+                  ElevatedButton(onPressed: _load, child: const Text('重试')),
+                ],
+              ),
+            )
           : ListView(padding: const EdgeInsets.all(16), children: [
               Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
