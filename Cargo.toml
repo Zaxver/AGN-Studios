@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/agn-core",
+    "crates/agn-gateway",
+    "crates/agn-agent",
+    "crates/agn-server",
+    "crates/agn-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+repository = "https://github.com/agn-studios/agn"
+description = "AGN Studios - A multi-platform AI agent tool"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+# Web framework
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Error handling
+anyhow = "1"
+thiserror = "2"
+# UUID
+uuid = { version = "1", features = ["v4"] }
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+# Async traits
+futures-util = "0.3"
+# Embedded static files
+rust-embed = "8"
+# MIME types
+mime_guess = "2"
+# CLI
+clap = { version = "4", features = ["derive"] }
+# Regex
+regex = "1"
+# Async trait
+async-trait = "0.1"
+# Tokio streams
+tokio-stream = "0.1"

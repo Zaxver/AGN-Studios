@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AGN Studios</title>
+<style>
+/* ============ Theme ============ */
+:root{--bg:#1a1a2e;--bg2:#16213e;--surface:#0f3460;--surface2:#1a1a3e;--primary:#e94560;--primary2:#533483;--text:#e0e0e0;--text2:#a0a0b0;--green:#4caf50;--yellow:#ffc107;--red:#f44336;--border:#2a2a4a;--radius:8px;--sidebar-w:260px}
+[data-theme="oled"]{--bg:#000;--bg2:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--text:#e0e0e0;--border:#222}
+[data-theme="light"]{--bg:#f5f5f5;--bg2:#fff;--surface:#fff;--surface2:#eee;--text:#222;--text2:#666;--border:#ddd;--primary:#e94560;--primary2:#7b1fa2}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex}
+::selection{background:var(--primary);color:#fff}
+
+/* ============ Sidebar ============ */
+.sidebar{width:var(--sidebar-w);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:transform .3s}
+.sidebar-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.sidebar-header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,var(--primary),var(--primary2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.group-label{font-size:11px;text-transform:uppercase;color:var(--text2);padding:8px 16px 4px;cursor:pointer}
+.conv-list{flex:1;overflow-y:auto}
+.conv-item{padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;position:relative}
+.conv-item:hover{background:var(--surface)}
+.conv-item.active{background:var(--surface);border-left:3px solid var(--primary)}
+.conv-item .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.conv-item .status-dot.idle{background:var(--green)}
+.conv-item .status-dot.generating{background:var(--yellow);animation:pulse 1s infinite}
+.conv-item .status-dot.waiting{background:var(--yellow)}
+.conv-item .status-dot.error{background:var(--red)}
+.conv-item .title{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.sidebar-footer{padding:8px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.btn-new-chat{flex:1;padding:8px;background:var(--primary);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:14px}
+.btn-new-chat:hover{opacity:.85}
+.btn-key-status{padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:12px;color:var(--text2)}
+
+/* ============ Main ============ */
+.main{flex:1;display:flex;flex-direction:column;height:100vh}
+.topbar{padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg2)}
+.topbar .model-select{padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px}
+.topbar .thinking-select{padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text2);font-size:12px}
+.topbar .spacer{flex:1}
+.topbar .btn-settings{padding:6px 10px;background:none;border:none;cursor:pointer;color:var(--text2);font-size:18px}
+.topbar .btn-toggle-sidebar{display:none}
+
+/* ============ Messages ============ */
+.messages{flex:1;overflow-y:auto;padding:16px;scroll-behavior:smooth}
+.msg{margin-bottom:16px;max-width:900px}
+.msg.user .bubble{background:var(--surface);border-radius:12px 12px 4px 12px;padding:12px 16px;margin-left:60px}
+.msg.assistant .bubble{background:var(--surface2);border-radius:12px 12px 12px 4px;padding:12px 16px;margin-right:60px}
+.msg .role{font-size:11px;color:var(--text2);margin-bottom:4px;font-weight:600}
+.msg .bubble{font-size:14px;line-height:1.6;word-wrap:break-word}
+.msg .bubble pre{background:var(--bg);border-radius:6px;padding:12px;overflow-x:auto;margin:8px 0}
+.msg .bubble code{font-family:'Fira Code',monospace;font-size:13px}
+.msg .bubble p{margin:4px 0}
+.msg .stats{font-size:11px;color:var(--text2);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap}
+.msg .stats span{display:flex;align-items:center;gap:3px}
+.msg .tool-call{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin:6px 0;font-size:13px}
+.msg .tool-call .tool-name{font-weight:600;color:var(--primary)}
+.msg .tool-result{font-size:12px;color:var(--text2);margin-top:4px;white-space:pre-wrap;max-height:200px;overflow-y:auto}
+.msg .file-write{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--green);font-weight:600}
+
+/* ============ Context Menu ============ */
+.ctx-menu{position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:1000;display:none;min-width:180px}
+.ctx-menu.show{display:block}
+.ctx-item{padding:8px 16px;cursor:pointer;font-size:13px}
+.ctx-item:hover{background:var(--surface2)}
+.ctx-item.danger{color:var(--red)}
+
+/* ============ Input ============ */
+.input-area{padding:8px 16px;border-top:1px solid var(--border);display:flex;align-items:flex-end;gap:8px;background:var(--bg2)}
+.btn-plus{width:36px;height:36px;border:none;background:var(--surface);border-radius:50%;cursor:pointer;color:var(--text);font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.btn-plus:hover{background:var(--surface2)}
+.input-wrapper{flex:1;position:relative}
+.input-wrapper textarea{width:100%;min-height:36px;max-height:200px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;font-family:inherit;resize:none;outline:none}
+.input-wrapper textarea:focus{border-color:var(--primary)}
+.btn-send{width:36px;height:36px;border:none;background:var(--primary);border-radius:50%;cursor:pointer;color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.btn-send:hover{opacity:.85}
+.btn-send:disabled{opacity:.3;cursor:not-allowed}
+.plus-menu{position:absolute;bottom:45px;left:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 4px 20px rgba(0,0,0,.3);display:none;min-width:160px}
+.plus-menu.show{display:block}
+.plus-menu-item{padding:8px 16px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
+.plus-menu-item:hover{background:var(--surface2)}
+
+/* ============ Status Bar ============ */
+.gen-status{position:absolute;top:60px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:6px 16px;font-size:13px;display:none;align-items:center;gap:8px;z-index:100}
+.gen-status.show{display:flex}
+.gen-status .spinner{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.gen-status .light{width:8px;height:8px;border-radius:50%}
+.gen-status .light.green{background:var(--green)}
+.gen-status .light.yellow{background:var(--yellow)}
+.gen-status .light.red{background:var(--red)}
+
+/* ============ Settings Modal ============ */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:2000;display:none;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:90%;max-width:600px;max-height:85vh;overflow-y:auto}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-header h2{font-size:18px}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--text2);font-size:24px}
+.modal-body{padding:16px 20px}
+.modal-section{margin-bottom:20px}
+.modal-section h3{font-size:14px;color:var(--text2);margin-bottom:8px;text-transform:uppercase}
+.modal-section .row{display:flex;align-items:center;justify-content:space-between;padding:6px 0}
+.modal-section select,.modal-section input,.modal-section textarea{padding:6px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:100%}
+.modal-section label{font-size:13px;color:var(--text2)}
+
+/* ============ Key Status Modal ============ */
+.key-status-list{display:flex;flex-direction:column;gap:4px}
+.key-status-item{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface);border-radius:6px;font-size:13px}
+.key-status-item .dot{width:8px;height:8px;border-radius:50%}
+.key-status-item .dot.available{background:var(--green)}
+.key-status-item .dot.cooling{background:var(--yellow)}
+.key-status-item .dot.networkerror{background:var(--yellow)}
+.key-status-item .dot.invalid{background:var(--red)}
+.key-status-item .dot.unused{background:var(--text2)}
+
+/* ============ Mobile ============ */
+@media(max-width:768px){
+.sidebar{position:fixed;left:0;top:0;bottom:0;z-index:100;transform:translateX(-100%)}
+.sidebar.open{transform:translateX(0)}
+.topbar .btn-toggle-sidebar{display:block}
+.msg.user .bubble{margin:0}
+.msg.assistant .bubble{margin:0}
+}
+</style>
+</head>
+<body>
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h1>⚡ AGN</h1>
+  </div>
+  <div class="conv-list" id="conv-list">
+    <div class="group-label">未分组</div>
+  </div>
+  <div class="sidebar-footer">
+    <button class="btn-new-chat" onclick="newChat()">+ 新对话</button>
+    <button class="btn-key-status" onclick="showKeyStatus()" title="API Key状态">🔑</button>
+  </div>
+</aside>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <button class="btn-toggle-sidebar" onclick="toggleSidebar()">☰</button>
+    <select class="model-select" id="model-select"><option>选择模型</option></select>
+    <select class="thinking-select" id="thinking-select">
+      <option value="0">思考: 关</option>
+      <option value="1">思考: 浅</option>
+      <option value="2">思考: 标准</option>
+      <option value="3">思考: 深</option>
+    </select>
+    <div class="spacer"></div>
+    <button class="btn-settings" onclick="showSettings()">⚙</button>
+  </div>
+
+  <!-- Generation status -->
+  <div class="gen-status" id="gen-status">
+    <div class="spinner" id="gen-spinner"></div>
+    <div class="light" id="gen-light" style="display:none"></div>
+    <span id="gen-text">正在生成回复...</span>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages" id="messages">
+    <div style="text-align:center;color:var(--text2);padding:40px;font-size:14px">
+      选择一个对话或创建新对话开始
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-area">
+    <div style="position:relative">
+      <button class="btn-plus" onclick="togglePlusMenu()">+</button>
+      <div class="plus-menu" id="plus-menu">
+        <div class="plus-menu-item" onclick="uploadFile()">📄 上传文件</div>
+        <div class="plus-menu-item" onclick="uploadImage()">🖼️ 上传图片</div>
+        <div class="plus-menu-item" id="plus-camera" onclick="takePhoto()">📷 拍照</div>
+        <div class="plus-menu-item" onclick="bindWorkspace()">📁 绑定工作区</div>
+      </div>
+    </div>
+    <div class="input-wrapper">
+      <textarea id="input" placeholder="输入消息..." rows="1" oninput="autoResize(this)"></textarea>
+    </div>
+    <button class="btn-send" id="send-btn" onclick="sendMessage()">➤</button>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div class="ctx-menu" id="ctx-menu"></div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-header"><h2>设置</h2><button class="modal-close" onclick="hideSettings()">×</button></div>
+    <div class="modal-body" id="settings-body"></div>
+  </div>
+</div>
+
+<!-- Key Status Modal -->
+<div class="modal-overlay" id="keystatus-modal">
+  <div class="modal">
+    <div class="modal-header"><h2>API Key 状态</h2><button class="modal-close" onclick="hideKeyStatus()">×</button></div>
+    <div class="modal-body"><div class="key-status-list" id="key-status-list"></div></div>
+  </div>
+</div>
+
+<script>
+const API = location.origin.replace(/:\d+$/,'') + ':' + (parseInt(location.port||'11829')-1);
+const $ = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'"'}[c]));
+
+let ws = null;
+let currentConv = null;
+let conversations = [];
+
+// === Init ===
+async function init(){
+  loadConfig();
+  connectWS();
+  await loadConversations();
+  await loadModels();
+  // Enter to send (desktop)
+  $('input').addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey&&!e.ctrlKey&&isDesktop()){
+      e.preventDefault();sendMessage();
+    }
+  });
+}
+
+function isDesktop(){return window.innerWidth>768}
+
+function loadConfig(){
+  const theme=localStorage.getItem('agn-theme')||'dark';
+  document.documentElement.dataset.theme=theme;
+  // Hide camera on desktop
+  if(isDesktop()){$('plus-camera').style.display='none'}
+}
+
+// === WebSocket ===
+function connectWS(){
+  const wsUrl=API.replace('http','ws')+'/ws';
+  ws=new WebSocket(wsUrl);
+  ws.onopen=()=>console.log('WS connected');
+  ws.onmessage=ev=>{
+    const data=JSON.parse(ev.data);
+    handleWSMessage(data);
+  };
+  ws.onclose=()=>setTimeout(connectWS,3000);
+}
+
+function handleWSMessage(data){
+  switch(data.type){
+    case'status':showGenStatus(data.state,data.message,data.current,data.total);break;
+    case'text_chunk':appendText(data.content);break;
+    case'tool_call':appendToolCall(data);break;
+    case'tool_result':appendToolResult(data);break;
+    case'file_write':appendFileWrite(data.info);break;
+    case'done':hideGenStatus();break;
+    case'error':showError(data.message);break;
+  }
+}
+
+// === Conversations ===
+async function loadConversations(){
+  try{
+    const r=await fetch(API+'/api/conversations');
+    conversations=await r.json();
+    renderConvList();
+  }catch(e){console.error(e)}
+}
+
+function renderConvList(){
+  const list=$('conv-list');
+  // Group conversations
+  const groups={};
+  conversations.forEach(c=>{
+    const g=c.group||'未分组';
+    if(!groups[g])groups[g]=[];
+    groups[g].push(c);
+  });
+  let html='';
+  for(const[g,convs] of Object.entries(groups)){
+    html+=`<div class="group-label" onclick="addGroupPrompt('${esc(g)}')">${esc(g)}</div>`;
+    for(const c of convs){
+      html+=`<div class="conv-item ${currentConv===c.id?'active':''}" onclick="selectConv('${c.id}')" oncontextmenu="showCtxMenu(event,'${c.id}')">
+        <div class="status-dot idle"></div>
+        <div class="title">${esc(c.title)}</div>
+      </div>`;
+    }
+  }
+  list.innerHTML=html||'<div style="padding:20px;color:var(--text2);font-size:13px;text-align:center">暂无对话</div>';
+}
+
+async function newChat(){
+  const title='新对话';
+  try{
+    const r=await fetch(API+'/api/conversations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});
+    const conv=await r.json();
+    conversations.push(conv);
+    currentConv=conv.id;
+    renderConvList();
+    selectConv(conv.id);
+  }catch(e){console.error(e)}
+}
+
+async function selectConv(id){
+  currentConv=id;
+  const r=await fetch(API+`/api/conversations/${id}`);
+  const conv=await r.json();
+  renderMessages(conv);
+  renderConvList();
+}
+
+function renderMessages(conv){
+  const box=$('messages');
+  let html='';
+  for(const m of conv.messages){
+    const cls=m.role==='user'?'user':'assistant';
+    let stats='';
+    if(m.usage){
+      stats=`<div class="stats">
+        <span>↑${m.usage.prompt_tokens}</span>
+        <span>↓${m.usage.completion_tokens}</span>
+        ${m.usage.tokens_per_second?`<span>${m.usage.tokens_per_second.toFixed(1)} tok/s</span>`:''}
+        ${m.usage.time_to_first_token_ms?`<span>TFTT ${m.usage.time_to_first_token_ms}ms</span>`:''}
+      </div>`;
+    }
+    let toolHtml='';
+    if(m.tool_calls){
+      for(const tc of m.tool_calls){
+        toolHtml+=`<div class="tool-call"><span class="tool-name">${esc(tc.name)}</span><div class="tool-result">${esc(JSON.stringify(tc.arguments,null,2))}</div></div>`;
+      }
+    }
+    html+=`<div class="msg ${cls}" oncontextmenu="showMsgCtxMenu(event,'${m.id}')">
+      <div class="role">${m.role==='user'?'You':'AI'}</div>
+      <div class="bubble">${formatContent(m.content)}${toolHtml}${stats}</div>
+    </div>`;
+  }
+  box.innerHTML=html||'<div style="text-align:center;color:var(--text2);padding:40px">开始对话</div>';
+  box.scrollTop=box.scrollHeight;
+}
+
+function formatContent(text){
+  // Basic markdown: code blocks, bold, italic
+  let html=esc(text);
+  html=html.replace(/```(\w*)\n([\s\S]*?)```/g,(m,lang,code)=>`<pre><code>${code}</code></pre>`);
+  html=html.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+  html=html.replace(/\*(.*?)\*/g,'<em>$1</em>');
+  html=html.replace(/\n/g,'<br>');
+  return html;
+}
+
+// === Send Message ===
+async function sendMessage(){
+  const input=$('input');
+  const text=input.value.trim();
+  if(!text||!currentConv)return;
+  input.value='';autoResize(input);
+  // Add to UI immediately
+  const box=$('messages');
+  box.innerHTML+=`<div class="msg user"><div class="role">You</div><div class="bubble">${esc(text)}</div></div>`;
+  box.scrollTop=box.scrollHeight;
+  // Send via WS
+  if(ws&&ws.readyState===1){
+    ws.send(JSON.stringify({type:'chat',conversation_id:currentConv,content:text}));
+  }
+  showGenStatus('generating','正在生成回复...');
+}
+
+// === Generation Status ===
+function showGenStatus(state,message,current,total){
+  const box=$('gen-status');
+  const text=$('gen-text');
+  const light=$('gen-light');
+  const spinner=$('gen-spinner');
+  box.classList.add('show');
+  light.style.display='none';
+  spinner.style.display='inline-block';
+  if(state==='generating'){text.textContent=message||'正在生成回复...'}
+  else if(state==='retrying'){text.textContent=`重试中...[${current}/${total}]`}
+  else if(state==='network'){text.textContent=`网络波动...[${current}/${total}]`;light.style.display='inline-block';light.className='light yellow'}
+  else if(state==='waiting_user'){text.textContent='等待用户回复...';light.style.display='inline-block';light.className='light yellow';spinner.style.display='none'}
+  else if(state==='error'){text.textContent=message||'生成失败';light.style.display='inline-block';light.className='light red';spinner.style.display='none'}
+  else if(state==='idle'){box.classList.remove('show')}
+}
+
+function hideGenStatus(){$('gen-status').classList.remove('show')}
+
+function appendText(text){
+  const box=$('messages');
+  let lastMsg=box.querySelector('.msg.assistant:last-child .bubble');
+  if(!lastMsg){
+    box.innerHTML+=`<div class="msg assistant"><div class="role">AI</div><div class="bubble"></div></div>`;
+    lastMsg=box.querySelector('.msg.assistant:last-child .bubble');
+  }
+  lastMsg.innerHTML+=esc(text).replace(/\n/g,'<br>');
+  box.scrollTop=box.scrollHeight;
+}
+
+function appendFileWrite(info){
+  const box=$('messages');
+  let lastMsg=box.querySelector('.msg.assistant:last-child .bubble');
+  if(!lastMsg)return;
+  lastMsg.innerHTML+=`<div class="file-write">${info}</div>`;
+}
+
+// === Models ===
+async function loadModels(){
+  try{
+    const r=await fetch(API+'/api/models');
+    const data=await r.json();
+    const sel=$('model-select');
+    sel.innerHTML='<option value="">选择模型</option>';
+    for(const m of data.models||[]){sel.innerHTML+=`<option value="${esc(m.id)}">${esc(m.id)} (${esc(m.provider)})</option>`}
+    // Load saved selection
+    const saved=localStorage.getItem('agn-model');
+    if(saved)sel.value=saved;
+    sel.onchange=()=>localStorage.setItem('agn-model',sel.value);
+  }catch(e){console.error(e)}
+}
+
+// === Context Menu (right-click / long-press) ===
+function showMsgCtxMenu(e,msgId){
+  e.preventDefault();
+  const menu=$('ctx-menu');
+  menu.innerHTML=`
+    <div class="ctx-item" onclick="copyMessage('${msgId}')">📋 复制</div>
+    <div class="ctx-item" onclick="copySelection('${msgId}')">✂️ 节选复制</div>
+    <div class="ctx-item" onclick="editAndRollback('${msgId}')">↩️ 编辑并回滚到此</div>
+    <div class="ctx-item danger" onclick="deleteMessage('${msgId}')">🗑️ 删除</div>
+  `;
+  menu.style.left=e.clientX+'px';
+  menu.style.top=e.clientY+'px';
+  menu.classList.add('show');
+}
+
+document.addEventListener('click',()=>{$('ctx-menu').classList.remove('show')});
+
+function copyMessage(id){
+  // Find message and copy
+  navigator.clipboard.writeText('');
+}
+
+function deleteMessage(id){
+  if(!currentConv)return;
+  fetch(API+`/api/conversations/${currentConv}/messages/${id}`,{method:'DELETE'}).then(()=>selectConv(currentConv));
+}
+
+// === Settings ===
+function showSettings(){
+  const body=$('settings-body');
+  body.innerHTML=`
+    <div class="modal-section">
+      <h3>通用</h3>
+      <div class="row"><label>主题</label><select id="set-theme"><option value="dark">深色</option><option value="oled">OLED</option><option value="light">浅色</option></select></div>
+      <div class="row"><label>权限</label><select id="set-perm"><option value="fullaccess">完全访问</option><option value="workspace">工作区</option><option value="chat">聊天</option></select></div>
+      <div class="row"><label>Enter发送(桌面)</label><input type="checkbox" id="set-enter" checked></div>
+    </div>
+    <div class="modal-section">
+      <h3>Agent设置</h3>
+      <div class="row"><label>系统提示词</label></div>
+      <textarea id="set-sysprompt" rows="3" style="width:100%"></textarea>
+      <div class="row"><label>上下文长度</label><input type="number" id="set-ctx" value="32768"></div>
+      <div class="row"><label>自动压缩</label><input type="checkbox" id="set-compress" checked></div>
+    </div>
+    <div class="modal-section">
+      <h3>网关</h3>
+      <div id="gateway-providers"></div>
+      <button onclick="addProvider()" style="margin-top:8px;padding:6px 12px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer">+ 添加提供商</button>
+    </div>
+    <div class="modal-section">
+      <h3>Skills</h3>
+      <div id="skills-list"></div>
+      <input id="skill-url" placeholder="GitHub URL" style="margin-top:8px;width:70%">
+      <button onclick="installSkill()" style="padding:6px 12px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer">安装</button>
+    </div>
+    <div class="modal-section">
+      <h3>服务端</h3>
+      <div class="row"><label>启动WebUI</label><input type="checkbox" id="set-webui" checked></div>
+      <div class="row"><label>本地启动</label><input type="checkbox" id="set-local" checked></div>
+    </div>
+  `;
+  loadSettingsData();
+  $('settings-modal').classList.add('show');
+}
+
+function hideSettings(){$('settings-modal').classList.remove('show')}
+
+async function loadSettingsData(){
+  try{
+    const r=await fetch(API+'/api/config');
+    const cfg=await r.json();
+    $('set-theme').value=cfg.general?.theme||'dark';
+    $('set-perm').value=cfg.general?.permission||'fullaccess';
+    $('set-enter').checked=cfg.general?.enter_to_send ?? true;
+    $('set-sysprompt').value=cfg.agent?.system_prompt||'';
+    $('set-ctx').value=cfg.agent?.global_context_length||32768;
+    $('set-compress').checked=cfg.agent?.auto_compress?.enabled ?? true;
+    // Gateway providers
+    let html='';
+    for(const p of cfg.gateway?.providers||[]){
+      html+=`<div style="padding:8px;background:var(--surface);border-radius:6px;margin:4px 0">
+        <strong>${esc(p.name)}</strong> <span style="color:var(--text2)">${esc(p.base_url)}</span>
+        <span style="float:right">${p.keys.length} keys</span>
+      </div>`;
+    }
+    $('gateway-providers').innerHTML=html||'<div style="color:var(--text2)">暂无提供商</div>';
+    // Skills
+    const sr=await fetch(API+'/api/skills');
+    const skills=await sr.json();
+    let sh='';
+    for(const s of skills){
+      sh+=`<div style="padding:6px;background:var(--surface);border-radius:6px;margin:4px 0;display:flex;justify-content:space-between;align-items:center">
+        <span><strong>${esc(s.name)}</strong> ${s.enabled?'✅':'❌'}</span>
+        <button onclick="removeSkill('${esc(s.name)}')" style="color:var(--red);background:none;border:none;cursor:pointer">删除</button>
+      </div>`;
+    }
+    $('skills-list').innerHTML=sh||'<div style="color:var(--text2)">暂无Skills</div>';
+  }catch(e){console.error(e)}
+}
+
+// === Key Status ===
+async function showKeyStatus(){
+  try{
+    const r=await fetch(API+'/api/gateway/status');
+    const statuses=await r.json();
+    let html='';
+    for(const s of statuses){
+      const cls=s.status||'unused';
+      const cd=s.cooldown_remaining?`${s.cooldown_remaining}s`:'';
+      html+=`<div class="key-status-item">
+        <div class="dot ${cls}"></div>
+        <span>${esc(s.provider_name)}</span>
+        <span style="color:var(--text2)">${esc(s.key_label||s.key_id.slice(0,8))}</span>
+        ${cd?`<span style="color:var(--yellow)">${cd}</span>`:''}
+        ${s.last_error?`<span style="color:var(--red);font-size:11px">${esc(s.last_error.slice(0,60))}</span>`:''}
+      </div>`;
+    }
+    $('key-status-list').innerHTML=html||'<div style="color:var(--text2)">暂无Key</div>';
+    $('keystatus-modal').classList.add('show');
+  }catch(e){console.error(e)}
+}
+
+function hideKeyStatus(){$('keystatus-modal').classList.remove('show')}
+
+// === Helpers ===
+function toggleSidebar(){$('sidebar').classList.toggle('open')}
+function togglePlusMenu(){$('plus-menu').classList.toggle('show')}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,200)+'px'}
+function uploadFile(){console.log('upload file')}
+function uploadImage(){console.log('upload image')}
+function takePhoto(){console.log('take photo')}
+function bindWorkspace(){console.log('bind workspace')}
+
+// Long-press for mobile (simulates right-click)
+let pressTimer;
+document.addEventListener('touchstart',e=>{
+  if(e.target.closest('.msg')){
+    pressTimer=setTimeout(()=>{
+      const msgId=e.target.closest('.msg').querySelector('.role').textContent;
+      showMsgCtxMenu({preventDefault:()=>{},clientX:e.touches[0].clientX,clientY:e.touches[0].clientY},msgId);
+    },500);
+  }
+});
+document.addEventListener('touchend',()=>clearTimeout(pressTimer));
+
+// Theme change
+document.addEventListener('change',e=>{
+  if(e.target.id==='set-theme'){
+    document.documentElement.dataset.theme=e.target.value;
+    localStorage.setItem('agn-theme',e.target.value);
+  }
+});
+
+// Start
+init();
+</script>
+</body>
+</html>

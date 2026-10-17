@@ -1,0 +1,18 @@
+[package]
+name = "agn-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "agn"
+path = "src/main.rs"
+
+[dependencies]
+agn-core = { path = "../agn-core" }
+agn-server = { path = "../agn-server" }
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
