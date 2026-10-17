@@ -1,11 +1,17 @@
 /// AGN main screen — rikkahub-style chat UI.
 ///
-/// Key fixes:
-/// - SafeArea to avoid status bar overlap
-/// - Drawer for mobile sidebar
-/// - Auto-create conversation on first message
-/// - Proper WebSocket send with conversation_id
-/// - imopathic / keyboard handling
+/// Design reference: rikkahub 2.5.6
+/// - TopBar: menu button / title / model picker / new chat / settings
+/// - Message list: user right-aligned, AI left-aligned, avatars
+/// - Bottom input: rounded text field + send button
+/// - Drawer: conversation list with groups
+///
+/// Key fixes vs previous version:
+/// - SafeArea properly wraps both top bar and bottom input
+/// - HTTP timeout on all API calls (5s) prevents infinite spinners
+/// - Connection status indicator (red dot if backend offline)
+/// - Auto-retry WS connection with backoff
+/// - Input field is properly focusable
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -30,31 +36,57 @@ class _MainScreenState extends State<MainScreen> {
   Conversation? _currentConv;
   List<ModelInfo> _models = [];
   String? _selectedModel;
-  int _thinkingDepth = 0;
-  dynamic _ws;
-  final _inputCtrl = TextEditingController();
-  final _scrollCtrl = ScrollController();
   GenStatus? _genStatus;
   String _pendingText = '';
+  bool _backendOnline = false;
+  bool _loading = false;
+  dynamic _ws;
+  bool _wsConnected = false;
+  final _inputCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
   final _drawerKey = GlobalKey<ScaffoldState>();
+  final _inputFocus = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-    _connectWs();
+    _initData();
+  }
+
+  @override
+  void dispose() {
+    _inputCtrl.dispose();
+    _scrollCtrl.dispose();
+    _inputFocus.dispose();
+    _ws?.sink?.close();
+    super.dispose();
+  }
+
+  Future<void> _initData() async {
+    await _checkBackend();
+    if (_backendOnline) {
+      await _loadData();
+      _connectWs();
+    }
+  }
+
+  Future<void> _checkBackend() async {
+    final ok = await widget.api.ping();
+    if (mounted) setState(() => _backendOnline = ok);
   }
 
   Future<void> _loadData() async {
     try {
       final convs = await widget.api.getConversations();
       final models = await widget.api.getModels();
-      setState(() {
-        _conversations = convs;
-        _models = models;
-      });
-      if (convs.isNotEmpty) {
-        await _selectConv(convs.first.id);
+      if (mounted) {
+        setState(() {
+          _conversations = convs;
+          _models = models;
+        });
+        if (convs.isNotEmpty) {
+          await _selectConv(convs.first.id);
+        }
       }
     } catch (e) {
       debugPrint('Load error: $e');
@@ -63,15 +95,31 @@ class _MainScreenState extends State<MainScreen> {
 
   void _connectWs() {
     try {
+      _ws?.sink?.close();
       _ws = widget.api.connectWs();
-      _ws.stream.listen((data) {
-        final msg = jsonDecode(data.toString());
-        _handleWsMessage(msg);
-      }, onDone: () {
-        Future.delayed(const Duration(seconds: 3), _connectWs);
-      });
+      setState(() => _wsConnected = true);
+      _ws.stream.listen(
+        (data) {
+          try {
+            final msg = jsonDecode(data.toString());
+            _handleWsMessage(msg);
+          } catch (e) {
+            debugPrint('WS parse error: $e');
+          }
+        },
+        onError: (e) {
+          debugPrint('WS error: $e');
+          setState(() => _wsConnected = false);
+          Future.delayed(const Duration(seconds: 3), _connectWs);
+        },
+        onDone: () {
+          setState(() => _wsConnected = false);
+          Future.delayed(const Duration(seconds: 3), _connectWs);
+        },
+      );
     } catch (e) {
-      debugPrint('WS error: $e');
+      debugPrint('WS connect error: $e');
+      setState(() => _wsConnected = false);
       Future.delayed(const Duration(seconds: 3), _connectWs);
     }
   }
@@ -125,22 +173,29 @@ class _MainScreenState extends State<MainScreen> {
         _currentConv = conv;
         _pendingText = '';
       });
-      if (Navigator.canPop(context)) Navigator.pop(context); // close drawer
+      if (Navigator.canPop(context)) Navigator.pop(context);
     } catch (e) {
-      _snack('Failed: $e');
-    }
-  }
-
-  Future<void> _ensureConversation() async {
-    if (_currentConvId == null) {
-      await _newChat();
+      _snack('创建失败: $e');
     }
   }
 
   void _sendMessage() async {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty) return;
-    await _ensureConversation();
+
+    if (!_backendOnline) {
+      _snack('后端未连接，请先启动 agn serve');
+      return;
+    }
+
+    if (_currentConvId == null) {
+      try {
+        await _newChat();
+      } catch (e) {
+        _snack('创建对话失败: $e');
+        return;
+      }
+    }
     if (_currentConvId == null || _ws == null) return;
 
     _inputCtrl.clear();
@@ -154,6 +209,7 @@ class _MainScreenState extends State<MainScreen> {
       }
       _genStatus = GenStatus(state: 'generating', message: '正在生成回复...');
     });
+
     _ws.sink.add(jsonEncode({
       'type': 'chat',
       'conversation_id': _currentConvId,
@@ -188,6 +244,7 @@ class _MainScreenState extends State<MainScreen> {
         child: Column(
           children: [
             _buildTopBar(),
+            if (!_backendOnline) _buildOfflineBanner(),
             if (_genStatus != null) _buildGenStatus(),
             Expanded(child: _buildMessageList()),
             _buildInputArea(),
@@ -200,71 +257,66 @@ class _MainScreenState extends State<MainScreen> {
   // === Top Bar ===
   Widget _buildTopBar() {
     final title = _currentConv?.title ?? 'AGN Studios';
-    final isWide = MediaQuery.of(context).size.width > 768;
 
     return Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          if (!isWide)
-            IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => _drawerKey.currentState?.openDrawer(),
-            ),
+          // Drawer toggle
+          IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => _drawerKey.currentState?.openDrawer(),
+            tooltip: '对话列表',
+          ),
+          // Title
           Expanded(
             child: GestureDetector(
               onTap: () {},
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-                  ),
-                  if (_models.isNotEmpty && _selectedModel != null)
-                    Text(
-                      _models.firstWhere((m) => m.id == _selectedModel,
-                          orElse: () => _models.first).id,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).hintColor,
-                      ),
-                    ),
-                ],
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
               ),
+            ),
+          ),
+          // Connection indicator
+          Container(
+            width: 8,
+            height: 8,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: _wsConnected ? StatusColors.green : StatusColors.red,
+              shape: BoxShape.circle,
             ),
           ),
           // Model picker
-          PopupMenuButton<String>(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.smart_toy, size: 16, color: Theme.of(context).hintColor),
-                  const SizedBox(width: 4),
-                  Text(
-                    _selectedModel ?? '模型',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
-                  ),
-                ],
+          if (_models.isNotEmpty)
+            PopupMenuButton<String>(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.smart_toy, size: 16, color: Theme.of(context).hintColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      _selectedModel ?? '模型',
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                    ),
+                  ],
+                ),
               ),
+              onSelected: (v) => setState(() => _selectedModel = v),
+              itemBuilder: (_) => _models.map((m) => PopupMenuItem(
+                value: m.id,
+                child: Text('${m.id} (${m.provider})'),
+              )).toList(),
             ),
-            onSelected: (v) => setState(() => _selectedModel = v),
-            itemBuilder: (_) => _models.map((m) => PopupMenuItem(
-              value: m.id,
-              child: Text('${m.id} (${m.provider})'),
-            )).toList(),
-          ),
           // New chat
           IconButton(
-            icon: const Icon(Icons.add_comment_outlined),
+            icon: const Icon(Icons.add),
             onPressed: _newChat,
             tooltip: '新对话',
           ),
@@ -273,6 +325,28 @@ class _MainScreenState extends State<MainScreen> {
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // === Offline Banner ===
+  Widget _buildOfflineBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+      color: StatusColors.red.withOpacity(0.15),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off, size: 16, color: StatusColors.red),
+          const SizedBox(width: 8),
+          Text('后端未连接 (127.0.0.1:11828)', style: TextStyle(
+            fontSize: 12, color: StatusColors.red)),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _initData,
+            child: const Text('重试', style: TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -452,17 +526,22 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildAvatar(bool isUser) {
-    return Circle(
-      size: 32,
-      color: isUser
-        ? Theme.of(context).colorScheme.primary.withOpacity(0.3)
-        : Theme.of(context).colorScheme.secondaryContainer,
-      child: Icon(
-        isUser ? Icons.person : Icons.smart_toy,
-        size: 18,
+    return Container(
+      width: 32, height: 32,
+      decoration: BoxDecoration(
         color: isUser
-          ? Theme.of(context).colorScheme.primary
-          : Theme.of(context).colorScheme.onSecondaryContainer,
+          ? Theme.of(context).colorScheme.primary.withOpacity(0.3)
+          : Theme.of(context).colorScheme.secondaryContainer,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Icon(
+          isUser ? Icons.person : Icons.smart_toy,
+          size: 18,
+          color: isUser
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSecondaryContainer,
+        ),
       ),
     );
   }
@@ -484,10 +563,15 @@ class _MainScreenState extends State<MainScreen> {
                   topLeft: const Radius.circular(4),
                 ),
               ),
-              child: SelectableText(
-                _pendingText,
-                style: TextStyle(fontSize: 14, height: 1.5, color: Theme.of(context).colorScheme.onSurface),
-              ),
+              child: _pendingText.isEmpty
+                ? const SizedBox(
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : SelectableText(
+                    _pendingText,
+                    style: TextStyle(fontSize: 14, height: 1.5, color: Theme.of(context).colorScheme.onSurface),
+                  ),
             ),
           ),
         ],
@@ -496,14 +580,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   void _showMsgMenu(ChatMessage msg) {
-    final RenderBox box = context.findRenderObject() as RenderBox;
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     showMenu(
       context: context,
-      position: RelativeRect.fromRect(
-        const Offset(200, 400) & const Size(1, 1),
-        Offset.zero & overlay.size,
-      ),
+      position: const RelativeRect.fromLTRB(200, 400, 200, 400),
       items: [
         const PopupMenuItem(value: 'copy', child: Text('📋 复制')),
         const PopupMenuItem(value: 'edit', child: Text('↩️ 编辑并回滚')),
@@ -519,7 +598,7 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  // === Input Area ===
+  // === Input Area — rikkahub style ===
   Widget _buildInputArea() {
     return SafeArea(
       top: false,
@@ -559,8 +638,10 @@ class _MainScreenState extends State<MainScreen> {
                 constraints: const BoxConstraints(maxHeight: 120),
                 child: TextField(
                   controller: _inputCtrl,
+                  focusNode: _inputFocus,
                   maxLines: null,
                   minLines: 1,
+                  textInputAction: TextInputAction.send,
                   decoration: InputDecoration(
                     hintText: '输入消息...',
                     isDense: true,
@@ -654,42 +735,44 @@ class _MainScreenState extends State<MainScreen> {
             ),
             // Conversation list
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                itemCount: groups.length,
-                itemBuilder: (ctx, gi) {
-                  final group = groups.keys.elementAt(gi);
-                  final convs = groups[group]!;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: Text(group, style: TextStyle(
-                          fontSize: 11, color: Theme.of(context).hintColor,
-                          fontWeight: FontWeight.w600)),
-                      ),
-                      ...convs.map((c) {
-                        final isActive = c.id == _currentConvId;
-                        return ListTile(
-                          dense: true,
-                          selected: isActive,
-                          selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
-                          leading: _buildConvStatusDot(c),
-                          title: Text(c.title, maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 14)),
-                          onTap: () {
-                            _selectConv(c.id);
-                            Navigator.pop(context);
-                          },
-                          onLongPress: () => _showConvMenu(c),
-                        );
-                      }),
-                    ],
-                  );
-                },
-              ),
+              child: _conversations.isEmpty
+                ? Center(child: Text('没有对话记录', style: TextStyle(color: Theme.of(context).hintColor)))
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: groups.length,
+                    itemBuilder: (ctx, gi) {
+                      final group = groups.keys.elementAt(gi);
+                      final convs = groups[group]!;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Text(group, style: TextStyle(
+                              fontSize: 11, color: Theme.of(context).hintColor,
+                              fontWeight: FontWeight.w600)),
+                          ),
+                          ...convs.map((c) {
+                            final isActive = c.id == _currentConvId;
+                            return ListTile(
+                              dense: true,
+                              selected: isActive,
+                              selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                              leading: _buildConvStatusDot(c),
+                              title: Text(c.title, maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14)),
+                              onTap: () {
+                                _selectConv(c.id);
+                                Navigator.pop(context);
+                              },
+                              onLongPress: () => _showConvMenu(c),
+                            );
+                          }),
+                        ],
+                      );
+                    },
+                  ),
             ),
           ],
         ),
@@ -728,27 +811,6 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Simple circle widget for avatars.
-class Circle extends StatelessWidget {
-  final double size;
-  final Color color;
-  final Widget? child;
-
-  const Circle({super.key, required this.size, required this.color, this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
-      child: Center(child: child ?? const SizedBox()),
     );
   }
 }
