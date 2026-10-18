@@ -30,16 +30,29 @@ jobs:
           rm -rf /tmp/agn-build/lib/*
           cp -r $GITHUB_WORKSPACE/agn-app/lib/* /tmp/agn-build/lib/
           cp $GITHUB_WORKSPACE/agn-app/pubspec.yaml /tmp/agn-build/pubspec.yaml
-          # Add usesCleartextTraffic for localhost HTTP
+          # Create network security config for cleartext HTTP (localhost)
+          mkdir -p /tmp/agn-build/android/app/src/main/res/xml
+          cat > /tmp/agn-build/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="true">
+                  <trust-anchors>
+                      <certificates src="system" />
+                      <certificates src="user" />
+                  </trust-anchors>
+              </base-config>
+          </network-security-config>
+          EOF
+          # Inject usesCleartextTraffic + networkSecurityConfig into manifest
           python3 -c "
-          import re
           p = '/tmp/agn-build/android/app/src/main/AndroidManifest.xml'
           with open(p) as f: c = f.read()
           if 'usesCleartextTraffic' not in c:
-            c = c.replace('<application', '<application android:usesCleartextTraffic=\"true\"', 1)
+            c = c.replace('<application', '<application android:usesCleartextTraffic=\"true\" android:networkSecurityConfig=\"@xml/network_security_config\"', 1)
           c = c.replace('android:label=\"agn_app\"', 'android:label=\"AGN Studios\"')
           with open(p, 'w') as f: f.write(c)
-          print('Manifest updated:', c[:200])
+          print('Manifest updated')
+          print(c[:300])
           "
 
       - name: Install dependencies
