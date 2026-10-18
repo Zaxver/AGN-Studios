@@ -30,30 +30,30 @@ jobs:
           rm -rf /tmp/agn-build/lib/*
           cp -r $GITHUB_WORKSPACE/agn-app/lib/* /tmp/agn-build/lib/
           cp $GITHUB_WORKSPACE/agn-app/pubspec.yaml /tmp/agn-build/pubspec.yaml
-          # Create network security config for cleartext HTTP (localhost)
-          mkdir -p /tmp/agn-build/android/app/src/main/res/xml
-          cat > /tmp/agn-build/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-              <base-config cleartextTrafficPermitted="true">
-                  <trust-anchors>
-                      <certificates src="system" />
-                      <certificates src="user" />
-                  </trust-anchors>
-              </base-config>
-          </network-security-config>
-          EOF
-          # Inject usesCleartextTraffic + networkSecurityConfig into manifest
-          python3 -c "
+          # Inject INTERNET permission + usesCleartextTraffic + networkSecurityConfig into manifest
+          python3 << 'PYEOF'
+          import os
+          # Create network security config XML (no leading whitespace)
+          xml_dir = '/tmp/agn-build/android/app/src/main/res/xml'
+          os.makedirs(xml_dir, exist_ok=True)
+          nsc = '<?xml version="1.0" encoding="utf-8"?>\n<network-security-config>\n  <base-config cleartextTrafficPermitted="true">\n    <trust-anchors>\n      <certificates src="system" />\n      <certificates src="user" />\n    </trust-anchors>\n  </base-config>\n</network-security-config>\n'
+          with open(os.path.join(xml_dir, 'network_security_config.xml'), 'w') as f:
+              f.write(nsc)
+          # Modify AndroidManifest.xml
           p = '/tmp/agn-build/android/app/src/main/AndroidManifest.xml'
           with open(p) as f: c = f.read()
+          # Add INTERNET permission before <application>
+          if 'android.permission.INTERNET' not in c:
+              c = c.replace('<application', '    <uses-permission android:name="android.permission.INTERNET" />\n    <application', 1)
+          # Add usesCleartextTraffic + networkSecurityConfig to <application>
           if 'usesCleartextTraffic' not in c:
-            c = c.replace('<application', '<application android:usesCleartextTraffic=\"true\" android:networkSecurityConfig=\"@xml/network_security_config\"', 1)
-          c = c.replace('android:label=\"agn_app\"', 'android:label=\"AGN Studios\"')
+              c = c.replace('<application', '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config"', 1)
+          # Rename app label
+          c = c.replace('android:label="agn_app"', 'android:label="AGN Studios"')
           with open(p, 'w') as f: f.write(c)
-          print('Manifest updated')
-          print(c[:300])
-          "
+          print('Manifest updated:')
+          print(c[:500])
+          PYEOF
 
       - name: Install dependencies
         run: cd /tmp/agn-build && flutter pub get
