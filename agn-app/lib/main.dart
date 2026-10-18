@@ -18,12 +18,21 @@ void _log(String msg) {
 
 Future<void> _flushLog() async {
   try {
-    final dir = await getApplicationDocumentsDirectory();
-    final f = File('${dir.path}/agn_app.log');
+    // Write to public Downloads directory for easy access
+    final f = File('/storage/emulated/0/Download/agn_app.log');
     await f.writeAsString(_logBuffer.toString());
     _log('Log written to ${f.path}');
   } catch (e) {
     _log('Log write failed: $e');
+    // Fallback to app documents
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}/agn_app.log');
+      await f.writeAsString(_logBuffer.toString());
+      _log('Log written (fallback) to ${f.path}');
+    } catch (e2) {
+      _log('Log write fallback failed: $e2');
+    }
   }
 }
 
