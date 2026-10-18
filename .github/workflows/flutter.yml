@@ -30,30 +30,56 @@ jobs:
           rm -rf /tmp/agn-build/lib/*
           cp -r $GITHUB_WORKSPACE/agn-app/lib/* /tmp/agn-build/lib/
           cp $GITHUB_WORKSPACE/agn-app/pubspec.yaml /tmp/agn-build/pubspec.yaml
-          # Inject INTERNET permission + usesCleartextTraffic + networkSecurityConfig into manifest
-          python3 << 'PYEOF'
+
+      - name: Configure Android manifest
+        run: |
+          python3 -c "
           import os
-          # Create network security config XML (no leading whitespace)
+          # Create network_security_config.xml
           xml_dir = '/tmp/agn-build/android/app/src/main/res/xml'
           os.makedirs(xml_dir, exist_ok=True)
-          nsc = '<?xml version="1.0" encoding="utf-8"?>\n<network-security-config>\n  <base-config cleartextTrafficPermitted="true">\n    <trust-anchors>\n      <certificates src="system" />\n      <certificates src="user" />\n    </trust-anchors>\n  </base-config>\n</network-security-config>\n'
           with open(os.path.join(xml_dir, 'network_security_config.xml'), 'w') as f:
-              f.write(nsc)
-          # Modify AndroidManifest.xml
+              f.write('<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<network-security-config>\n  <base-config cleartextTrafficPermitted=\"true\">\n    <trust-anchors>\n      <certificates src=\"system\" />\n      <certificates src=\"user\" />\n    </trust-anchors>\n  </base-config>\n</network-security-config>\n')
+          # Write a complete AndroidManifest.xml
+          manifest = '''<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">
+    <uses-permission android:name=\"android.permission.INTERNET\" />
+    <uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\" />
+    <application
+        android:label=\"AGN Studios\"
+        android:name=\"\${applicationName}\"
+        android:icon=\"@mipmap/ic_launcher\"
+        android:usesCleartextTraffic=\"true\"
+        android:networkSecurityConfig=\"@xml/network_security_config\">
+        <activity
+            android:name=\".MainActivity\"
+            android:exported=\"true\"
+            android:launchMode=\"singleTop\"
+            android:taskAffinity=\"\"
+            android:theme=\"@style/LaunchTheme\"
+            android:configChanges=\"orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode\"
+            android:hardwareAccelerated=\"true\"
+            android:windowSoftInputMode=\"adjustResize\">
+            <meta-data
+                android:name=\"io.flutter.embedding.android.NormalTheme\"
+                android:resource=\"@style/NormalTheme\" />
+            <intent-filter>
+                <action android:name=\"android.intent.action.MAIN\" />
+                <category android:name=\"android.intent.category.LAUNCHER\" />
+            </intent-filter>
+        </activity>
+        <meta-data
+            android:name=\"flutterEmbedding\"
+            android:value=\"2\" />
+    </application>
+</manifest>
+'''
           p = '/tmp/agn-build/android/app/src/main/AndroidManifest.xml'
-          with open(p) as f: c = f.read()
-          # Add INTERNET permission before <application>
-          if 'android.permission.INTERNET' not in c:
-              c = c.replace('<application', '    <uses-permission android:name="android.permission.INTERNET" />\n    <application', 1)
-          # Add usesCleartextTraffic + networkSecurityConfig to <application>
-          if 'usesCleartextTraffic' not in c:
-              c = c.replace('<application', '<application android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config"', 1)
-          # Rename app label
-          c = c.replace('android:label="agn_app"', 'android:label="AGN Studios"')
-          with open(p, 'w') as f: f.write(c)
-          print('Manifest updated:')
-          print(c[:500])
-          PYEOF
+          with open(p, 'w') as f:
+              f.write(manifest)
+          print('Manifest written:')
+          with open(p) as f:
+              print(f.read()[:500])
+          "
 
       - name: Install dependencies
         run: cd /tmp/agn-build && flutter pub get
