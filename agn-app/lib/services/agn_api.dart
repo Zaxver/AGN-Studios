@@ -46,7 +46,8 @@ class AgnApi {
   }
 
   Future<String> _readBody(HttpClientResponse res) async {
-    return await res.transform<List<int>>(utf8.decoder).join();
+    final bytes = await res.toList();
+    return utf8.decode(bytes.expand((b) => b).toList());
   }
 
   // === Health ===
