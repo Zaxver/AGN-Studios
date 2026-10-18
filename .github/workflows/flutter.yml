@@ -31,7 +31,16 @@ jobs:
           cp -r $GITHUB_WORKSPACE/agn-app/lib/* /tmp/agn-build/lib/
           cp $GITHUB_WORKSPACE/agn-app/pubspec.yaml /tmp/agn-build/pubspec.yaml
           # Add usesCleartextTraffic for localhost HTTP
-          sed -i 's/android:label="agn_app"/android:label="AGN Studios" android:usesCleartextTraffic="true"/' /tmp/agn-build/android/app/src/main/AndroidManifest.xml
+          python3 -c "
+          import re
+          p = '/tmp/agn-build/android/app/src/main/AndroidManifest.xml'
+          with open(p) as f: c = f.read()
+          if 'usesCleartextTraffic' not in c:
+            c = c.replace('<application', '<application android:usesCleartextTraffic=\"true\"', 1)
+          c = c.replace('android:label=\"agn_app\"', 'android:label=\"AGN Studios\"')
+          with open(p, 'w') as f: f.write(c)
+          print('Manifest updated:', c[:200])
+          "
 
       - name: Install dependencies
         run: cd /tmp/agn-build && flutter pub get
