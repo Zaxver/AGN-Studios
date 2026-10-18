@@ -33,53 +33,61 @@ jobs:
 
       - name: Configure Android manifest
         run: |
-          python3 -c "
+          mkdir -p /tmp/agn-build/android/app/src/main/res/xml
+          python3 << 'SCRIPT'
           import os
-          # Create network_security_config.xml
           xml_dir = '/tmp/agn-build/android/app/src/main/res/xml'
           os.makedirs(xml_dir, exist_ok=True)
+          nsc = '<?xml version="1.0" encoding="utf-8"?>\n'
+          nsc += '<network-security-config>\n'
+          nsc += '    <base-config cleartextTrafficPermitted="true">\n'
+          nsc += '        <trust-anchors>\n'
+          nsc += '            <certificates src="system" />\n'
+          nsc += '            <certificates src="user" />\n'
+          nsc += '        </trust-anchors>\n'
+          nsc += '    </base-config>\n'
+          nsc += '</network-security-config>\n'
           with open(os.path.join(xml_dir, 'network_security_config.xml'), 'w') as f:
-              f.write('<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<network-security-config>\n  <base-config cleartextTrafficPermitted=\"true\">\n    <trust-anchors>\n      <certificates src=\"system\" />\n      <certificates src=\"user\" />\n    </trust-anchors>\n  </base-config>\n</network-security-config>\n')
-          # Write a complete AndroidManifest.xml
-          manifest = '''<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">
-    <uses-permission android:name=\"android.permission.INTERNET\" />
-    <uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\" />
-    <application
-        android:label=\"AGN Studios\"
-        android:name=\"\${applicationName}\"
-        android:icon=\"@mipmap/ic_launcher\"
-        android:usesCleartextTraffic=\"true\"
-        android:networkSecurityConfig=\"@xml/network_security_config\">
-        <activity
-            android:name=\".MainActivity\"
-            android:exported=\"true\"
-            android:launchMode=\"singleTop\"
-            android:taskAffinity=\"\"
-            android:theme=\"@style/LaunchTheme\"
-            android:configChanges=\"orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode\"
-            android:hardwareAccelerated=\"true\"
-            android:windowSoftInputMode=\"adjustResize\">
-            <meta-data
-                android:name=\"io.flutter.embedding.android.NormalTheme\"
-                android:resource=\"@style/NormalTheme\" />
-            <intent-filter>
-                <action android:name=\"android.intent.action.MAIN\" />
-                <category android:name=\"android.intent.category.LAUNCHER\" />
-            </intent-filter>
-        </activity>
-        <meta-data
-            android:name=\"flutterEmbedding\"
-            android:value=\"2\" />
-    </application>
-</manifest>
-'''
+              f.write(nsc)
+          manifest = '<?xml version="1.0" encoding="utf-8"?>\n'
+          manifest += '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+          manifest += '    <uses-permission android:name="android.permission.INTERNET" />\n'
+          manifest += '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n'
+          manifest += '    <application\n'
+          manifest += '        android:label="AGN Studios"\n'
+          manifest += '        android:name="${applicationName}"\n'
+          manifest += '        android:icon="@mipmap/ic_launcher"\n'
+          manifest += '        android:usesCleartextTraffic="true"\n'
+          manifest += '        android:networkSecurityConfig="@xml/network_security_config">\n'
+          manifest += '        <activity\n'
+          manifest += '            android:name=".MainActivity"\n'
+          manifest += '            android:exported="true"\n'
+          manifest += '            android:launchMode="singleTop"\n'
+          manifest += '            android:taskAffinity=""\n'
+          manifest += '            android:theme="@style/LaunchTheme"\n'
+          manifest += '            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"\n'
+          manifest += '            android:hardwareAccelerated="true"\n'
+          manifest += '            android:windowSoftInputMode="adjustResize">\n'
+          manifest += '            <meta-data\n'
+          manifest += '                android:name="io.flutter.embedding.android.NormalTheme"\n'
+          manifest += '                android:resource="@style/NormalTheme" />\n'
+          manifest += '            <intent-filter>\n'
+          manifest += '                <action android:name="android.intent.action.MAIN" />\n'
+          manifest += '                <category android:name="android.intent.category.LAUNCHER" />\n'
+          manifest += '            </intent-filter>\n'
+          manifest += '        </activity>\n'
+          manifest += '        <meta-data\n'
+          manifest += '            android:name="flutterEmbedding"\n'
+          manifest += '            android:value="2" />\n'
+          manifest += '    </application>\n'
+          manifest += '</manifest>\n'
           p = '/tmp/agn-build/android/app/src/main/AndroidManifest.xml'
           with open(p, 'w') as f:
               f.write(manifest)
-          print('Manifest written:')
+          print('Manifest written successfully')
           with open(p) as f:
-              print(f.read()[:500])
-          "
+              print(f.read()[:300])
+          SCRIPT
 
       - name: Install dependencies
         run: cd /tmp/agn-build && flutter pub get
