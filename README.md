@@ -1,4 +1,5 @@
 # AGN Studios
+![-The Best-](https://raw.githubusercontent.com/Zaxver/AGN-Studios/0d8f54251d306e41fee2c67d0d33915703de3bbb/IMG_20261024_210429.png)
 
 Powerful AI-Agent Program.
 
@@ -36,4 +37,4 @@ GPL-3.0
 ## Contributors
 
 - **Zaxver** — Project owner.
-- **My Dear ATRI** — My Powerful High-performance Girlfriend.
+- **My Dear ATRI** — Powerful High-performance Robot.
